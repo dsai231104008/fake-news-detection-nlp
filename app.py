@@ -1,91 +1,134 @@
 import streamlit as st
 import pickle
-import numpy as np
+import re
+import matplotlib.pyplot as plt
+from wordcloud import WordCloud
 
-# ------------------ Page Configuration ------------------
+# ------------------ Page Config ------------------
 st.set_page_config(
     page_title="Fake News Detection",
     page_icon="📰",
     layout="centered"
 )
 
-# ------------------ Custom CSS Styling ------------------
+# ------------------ Custom CSS ------------------
 st.markdown("""
 <style>
 body {
-    background-color: #f4f6f9;
+    background: linear-gradient(135deg, #1e3c72, #2a5298);
 }
-.title {
+.main-title {
+    font-size: 44px;
+    font-weight: bold;
+    color: #ffffff;
     text-align: center;
-    color: #2c3e50;
+}
+.sub-title {
+    font-size: 18px;
+    color: #e0e0e0;
+    text-align: center;
+}
+.card {
+    background: rgba(255,255,255,0.15);
+    backdrop-filter: blur(12px);
+    padding: 30px;
+    border-radius: 20px;
 }
 .result-real {
-    color: green;
-    font-size: 22px;
+    color: #00ff9c;
+    font-size: 28px;
     font-weight: bold;
+    text-align: center;
 }
 .result-fake {
-    color: red;
-    font-size: 22px;
+    color: #ff4b4b;
+    font-size: 28px;
     font-weight: bold;
+    text-align: center;
 }
-.confidence {
-    color: #34495e;
-    font-size: 18px;
+.footer {
+    text-align: center;
+    color: #cccccc;
+    font-size: 14px;
 }
 </style>
 """, unsafe_allow_html=True)
 
-# ------------------ Load Model & Vectorizer ------------------
-@st.cache_resource
-def load_model():
-    with open("fake_news_model.pkl", "rb") as f:
-        model = pickle.load(f)
-    with open("tfidf_vectorizer.pkl", "rb") as f:
-        vectorizer = pickle.load(f)
-    return model, vectorizer
+# ------------------ Load Model ------------------
+model = pickle.load(open("fake_news_model.pkl", "rb"))
+vectorizer = pickle.load(open("tfidf_vectorizer.pkl", "rb"))
 
-model, vectorizer = load_model()
+# ------------------ Clean Text ------------------
+def clean_text(text):
+    text = text.lower()
+    text = re.sub(r'\W', ' ', text)
+    text = re.sub(r'\s+', ' ', text)
+    return text
 
-# ------------------ App Title ------------------
-st.markdown("<h1 class='title'>📰 Fake News Detection System</h1>", unsafe_allow_html=True)
-st.write("### Enter a news article to check whether it is **Fake** or **Real**")
+# ------------------ Header ------------------
+st.markdown('<div class="main-title">📰 Fake News Detection System</div>', unsafe_allow_html=True)
+st.markdown('<div class="sub-title">NLP-based Fake & Real News Classification</div><br>', unsafe_allow_html=True)
 
-# ------------------ Text Input ------------------
-news_text = st.text_area(
-    "📝 News Content:",
-    height=200,
-    placeholder="Paste news article text here..."
-)
+# ------------------ Input Card ------------------
+with st.container():
+    st.markdown('<div class="card">', unsafe_allow_html=True)
+    news_text = st.text_area(
+        "📝 Enter News Article:",
+        height=200,
+        placeholder="Paste news content here..."
+    )
+    col1, col2 = st.columns(2)
+    with col1:
+        predict_btn = st.button("🔍 Analyze News")
+    with col2:
+        reset_btn = st.button("🔄 Reset")
+    st.markdown('</div>', unsafe_allow_html=True)
 
-# ------------------ Prediction Button ------------------
-if st.button("🔍 Predict"):
+# ------------------ Reset (FIXED) ------------------
+if reset_btn:
+    st.rerun()   # ✅ correct function in latest Streamlit
+
+# ------------------ Prediction ------------------
+if predict_btn:
     if news_text.strip() == "":
-        st.warning("⚠️ Please enter some text.")
+        st.warning("⚠️ Please enter news text!")
     else:
-        # Vectorize input
-        transformed_text = vectorizer.transform([news_text])
+        cleaned = clean_text(news_text)
+        vectorized = vectorizer.transform([cleaned])
+        prediction = model.predict(vectorized)
+        probability = model.predict_proba(vectorized)[0]
 
-        # Prediction
-        prediction = model.predict(transformed_text)[0]
-        probabilities = model.predict_proba(transformed_text)[0]
+        st.markdown("---")
 
-        confidence = np.max(probabilities) * 100
-
-        # ------------------ Display Result ------------------
-        if prediction == 1:
-            st.markdown("<p class='result-real'>✅ Result: REAL News</p>", unsafe_allow_html=True)
+        if prediction[0] == 1:
+            st.markdown('<div class="result-fake">🚨 FAKE NEWS DETECTED</div>', unsafe_allow_html=True)
         else:
-            st.markdown("<p class='result-fake'>❌ Result: FAKE News</p>", unsafe_allow_html=True)
+            st.markdown('<div class="result-real">✅ REAL NEWS DETECTED</div>', unsafe_allow_html=True)
 
-        st.markdown(
-            f"<p class='confidence'>📊 Prediction Confidence: <b>{confidence:.2f}%</b></p>",
-            unsafe_allow_html=True
-        )
+        confidence = max(probability) * 100
+        st.markdown(f"### 📊 Model Confidence: **{confidence:.2f}%**")
+        st.progress(int(confidence))
+
+        # ------------------ Probability Bar Chart ------------------
+        st.markdown("### 📈 Prediction Probability Chart")
+        fig, ax = plt.subplots()
+        ax.bar(["Real News", "Fake News"], probability)
+        ax.set_ylabel("Probability")
+        ax.set_ylim(0, 1)
+        st.pyplot(fig)
+
+        # ------------------ Word Cloud ------------------
+        st.markdown("### ☁️ Word Cloud of Entered News")
+        wc = WordCloud(
+            width=800,
+            height=400,
+            background_color="white"
+        ).generate(cleaned)
+
+        fig2, ax2 = plt.subplots()
+        ax2.imshow(wc, interpolation="bilinear")
+        ax2.axis("off")
+        st.pyplot(fig2)
 
 # ------------------ Footer ------------------
-st.markdown("---")
-st.markdown(
-    "<center>Developed for NLP Final Project | Fake News Detection</center>",
-    unsafe_allow_html=True
-)
+st.markdown("<br><div class='footer'>NLP Final Project | Fake News Detection</div>", unsafe_allow_html=True)
